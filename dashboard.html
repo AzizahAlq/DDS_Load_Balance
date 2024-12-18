@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Central Aggregator Dashboard</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        /* Styling for smaller canvas */
+        #throughputChart, #latencyChart {
+            width: 80% !important;
+            height: 300px !important;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Central Aggregator Dashboard</h1>
+
+    <!-- Display metrics -->
+    <div id="metricsContainer">
+        <h2>System Metrics</h2>
+        <p><strong>Last Selected Criteria:</strong> <span id="lastCriteria">{{ selection_criteria or 'None' }}</span></p>
+        <p><strong>Best Node:</strong> <span id="bestNode">{{ best_node or 'N/A' }}</span></p>
+        <p><strong>Selection Criteria:</strong> <span id="currentSelection">{{ selection_criteria or 'None' }}</span></p>
+        <p><strong>Average Latency:</strong> <span id="avgLatency">{{ avg_latency or 'N/A' }} seconds</span></p>
+        <p><strong>Throughput:</strong> <span id="throughput">{{ throughput or 'N/A' }} messages/sec</span></p>
+    </div>
+
+    <!-- Selection criteria form -->
+    <h2>Change Selection Criteria</h2>
+    <form id="criteriaForm">
+        <label for="criteria">Choose criteria:</label>
+        <select id="criteria" name="criteria">
+            <option value="1" {% if selection_criteria == 'CPU' %}selected{% endif %}>CPU</option>
+            <option value="2" {% if selection_criteria == 'Memory' %}selected{% endif %}>Memory</option>
+            <option value="3" {% if selection_criteria == 'Battery' %}selected{% endif %}>Battery</option>
+            <option value="4" {% if selection_criteria == 'Load' %}selected{% endif %}>Load</option>
+            <option value="5" {% if selection_criteria == 'All' %}selected{% endif %}>All Metrics</option>
+        </select>
+        <button type="submit">Set Criteria</button>
+    </form>
+
+    <!-- Recent Metrics Table -->
+    <h2>Recent Metrics</h2>
+    <table border="1">
+        <thead>
+            <tr>
+                <th>Node ID</th>
+                <th>CPU Load</th>
+                <th>Memory Usage</th>
+                <th>Battery Level</th>
+                <th>Load Avg</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for node in recent_metrics %}
+            <tr>
+                <td>{{ node.node_id }}</td>
+                <td>{{ node.cpu_load }}</td>
+                <td>{{ node.memory_usage }}</td>
+                <td>{{ node.battery_level }}</td>
+                <td>{{ node.load_avg }}</td>
+                <td>{{ node.timestamp }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Display graphs -->
+    <div>
+        <h2>Performance Metrics</h2>
+        <canvas id="throughputChart"></canvas>
+        <canvas id="latencyChart"></canvas>
+    </div>
+
+    <script>
+        // Handle form submission with AJAX
+        $(document).ready(function() {
+            $('#criteriaForm').on('submit', function(e) {
+                e.preventDefault();  // Prevent the default form submission
+                var criteria = $('#criteria').val();
+
+                $.ajax({
+                    url: '/set_criteria',  // POST request to the server
+                    method: 'POST',
+                    data: { criteria: criteria },  // Send criteria value
+                    success: function(response) {
+                        // Update the page dynamically based on the new selected criteria
+                        $('#lastCriteria').text(response.selection_criteria);
+                        $('#bestNode').text(response.best_node);
+                        $('#currentSelection').text(response.selection_criteria);
+                        $('#avgLatency').text(response.avg_latency);
+                        $('#throughput').text(response.throughput);
+                        
+                        // Optionally, update graphs if the response includes new data
+                        updateGraphs(response);
+                    },
+                    error: function(xhr, status, error) {
+                        console.error("Error:", error);
+                    }
+                });
+            });
+
+            // Function to update graphs dynamically based on new data
+            function updateGraphs(response) {
+                var throughputData = response.throughput_data;
+                var latencyData = response.latency_data;
+
+                console.log("Received data for graphs:", response);
+                console.log("Throughput data:", throughputData);
+                console.log("Latency data:", latencyData);
+
+                // Throughput Chart
+                var throughputChartCtx = document.getElementById('throughputChart').getContext('2d');
+                new Chart(throughputChartCtx, {
+                    type: 'line',
+                    data: {
+                        labels: throughputData.timestamps,
+                        datasets: [{
+                            label: 'Throughput',
+                            data: throughputData.values,
+                            borderColor: 'blue',
+                            fill: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: 'linear',
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+
+                // Latency Chart
+                var latencyChartCtx = document.getElementById('latencyChart').getContext('2d');
+                new Chart(latencyChartCtx, {
+                    type: 'line',
+                    data: {
+                        labels: latencyData.values,
+                        datasets: [{
+                            label: 'Latency',
+                            data: latencyData.values,
+                            borderColor: 'red',
+                            fill: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: 'linear',
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+
+    <!-- Include Chart.js for graph rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</body>
+</html>
