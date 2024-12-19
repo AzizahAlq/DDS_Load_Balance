@@ -38,11 +38,11 @@ class NodeSimulator:
 
         # Metrics publisher
         self.metrics_topic = Topic(self.participant, "node_metrics", nodeMetrics)
-        self.metrics_writer = DataWriter(Publisher(self.participant), self.metrics_topic,  qos=Qos(Policy.Reliability.BestEffort,Policy.Durability.Volatile))
+        self.metrics_writer = DataWriter(Publisher(self.participant), self.metrics_topic,  qos=Qos(Policy.Reliability.Reliable(1),Policy.Durability.Volatile))
 
         # Task publisher
         self.task_topic = Topic(self.participant, "task_assignments", TaskAssignment)
-        self.task_reader = DataReader(Subscriber(self.participant), self.task_topic,  qos=Qos(Policy.Reliability.BestEffort,Policy.Durability.Volatile))
+        self.task_reader = DataReader(Subscriber(self.participant), self.task_topic,  qos=Qos(Policy.Reliability.Reliable(1),Policy.Durability.Volatile))
 
         # Data for plotting
         self.cpu_load_data = deque(maxlen=30)
@@ -60,7 +60,6 @@ class NodeSimulator:
        while True:
           start_time = time.time()
           metrics = self.get_system_metrics()
-          time.sleep(65)
           self.metrics_writer.write(metrics)
           print(f"Node {self.node_id} sent metrics: {metrics}")
         
@@ -77,7 +76,7 @@ class NodeSimulator:
                 if sample and sample.node_id == self.node_id:
                     print(f"Node {self.node_id} received task: {sample.task}")
                     self.execute_task(sample.task)
-            time.sleep(60)
+            
 
     def execute_task(self, task_type):
         """Simulates task execution based on system metrics."""
