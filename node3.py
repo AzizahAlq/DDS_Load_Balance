@@ -39,11 +39,11 @@ class NodeSimulator:
 
         # Metrics publisher
         self.metrics_topic = Topic(self.participant, "node_metrics", nodeMetrics)
-        self.metrics_writer = DataWriter(Publisher(self.participant), self.metrics_topic,  qos=Qos(Policy.Reliability.BestEffort,Policy.Durability.Volatile))
+        self.metrics_writer = DataWriter(Publisher(self.participant), self.metrics_topic,  qos=Qos(Policy.Reliability.Reliable(1),Policy.Durability.Volatile))
 
         # Task publisher
         self.task_topic = Topic(self.participant, "task_assignments", TaskAssignment)
-        self.task_reader = DataReader(Subscriber(self.participant), self.task_topic,  qos=Qos(Policy.Reliability.BestEffort,Policy.Durability.Volatile))
+        self.task_reader = DataReader(Subscriber(self.participant), self.task_topic,  qos=Qos(Policy.Reliability.Reliable(1),Policy.Durability.Volatile))
 
         # Data for plotting
         self.cpu_load_data = deque(maxlen=30)
@@ -60,7 +60,6 @@ class NodeSimulator:
        while True:
           start_time = time.time()
           metrics = self.get_system_metrics()
-          time.sleep(65)
           self.metrics_writer.write(metrics)
           print(f"Node {self.node_id} sent metrics: {metrics}")
         
@@ -151,7 +150,6 @@ class NodeSimulator:
             
             # Update the plot in the main thread
             self.update_plot()
-
             time.sleep(60)  # Publish and update plot every 60 seconds
 
 if __name__ == "__main__":
