@@ -11,8 +11,8 @@ from cyclonedds.idl import IdlStruct
 from cyclonedds.idl.types import float32
 from dataclasses import dataclass
 from collections import deque
-import matplotlib.pyplot as plt
 import traceback
+import matplotlib.pyplot as plt
 
 # Flask app
 app = Flask(__name__)
@@ -22,8 +22,8 @@ node_metrics = []
 latencies = deque(maxlen=60)
 throughput_data = deque(maxlen=60)
 metrics_lock = threading.Lock()
-stop_event = threading.Event()
-pause_event = threading.Event()  # Added pause event
+pause_event = threading.Event()
+plot_running = True  # Control variable for plotting
 best_node = None
 optimal_value = float('inf')
 best_mac_address = None
@@ -57,9 +57,9 @@ metrics_topic = Topic(participant, 'node_metrics', NodeMetrics)
 task_topic = Topic(participant, 'task_assignment', TaskAssignment)
 
 subscriber = Subscriber(participant)
-reader = DataReader(subscriber, metrics_topic, qos=Qos(Policy.Reliability.BestEffort, Policy.Durability.Volatile))
+reader = DataReader(subscriber, metrics_topic, qos=Qos(Policy.Reliability.Reliable(1), Policy.Durability.Volatile))
 publisher = Publisher(participant)
-writer = DataWriter(publisher, task_topic, qos=Qos(Policy.Reliability.BestEffort, Policy.Durability.Volatile))
+writer = DataWriter(publisher, task_topic, qos=Qos(Policy.Reliability.Reliable(1), Policy.Durability.Volatile))
 
 # Selection criteria and weights
 criteria_map = {"1": "CPU", "2": "Memory", "3": "Battery", "4": "Load", "5": "ALL"}
@@ -67,20 +67,22 @@ selection_criteria = "CPU"
 weights = {"CPU": 0.25, "Memory": 0.25, "Battery": 0.25, "Load": 0.25}
 
 # DDS Listener
-# DDS Listener
 def dds_listener():
-    print("Starting DDS listener with interval check...")
+    print("Starting DDS listener...")
     global start_time, messages_received
     interval_seconds = 60  # Define the interval (e.g., 1 minute)
 
-    while not stop_event.is_set():
-        if pause_event.is_set():  # Pause the listener if pause_event is set
-            time.sleep(0.1)  # Brief sleep to avoid busy-waiting
-            continue
-
+    while True:
         try:
+            # Wait for the pause_event to be cleared before proceeding
+            if pause_event.is_set():
+                pause_event.wait()  # Blocks until the pause_event is cleared
+                continue
+
+            # Fetch samples from the DDS reader
             samples = reader.take()
             current_time = time.time()
+
             for msg in samples:
                 with metrics_lock:
                     last_time = last_processed_time.get(msg.node_id, 0)
@@ -89,7 +91,7 @@ def dds_listener():
                         update_node_metrics(msg, node_metrics)
                         last_processed_time[msg.node_id] = current_time
                         update_best_node(msg, node_metrics)
-                        
+
                         messages_received += 1
                         elapsed_time = abs(current_time - start_time)
                         if elapsed_time >= 1.0:
@@ -103,7 +105,7 @@ def dds_listener():
         except Exception as e:
             print(f"Error in DDS listener: {e}")
             traceback.print_exc()
-            
+
 # Update or append node data
 def update_node_metrics(msg, node_metrics):
     for i, node in enumerate(node_metrics):
@@ -143,24 +145,12 @@ def update_best_node(data, node_metrics):
     assign_task(best_node)
     print(f"New best node: {best_node} with score {optimal_value}")
 
-# Pause and Resume Functions
-def pause_listener():
-    print("Pausing DDS listener...")
-    pause_event.set()
-
-def resume_listener():
-    print("Resuming DDS listener...")
-    pause_event.clear()
-
 # Assign task to the best node
 def assign_task(node_id):
     task_name = "Perform task"
     task = TaskAssignment(task=task_name, node_id=node_id)
     writer.write(task)
     print(f"Assigned task '{task_name}' to node {node_id}")
-
-
-   # threading.Timer(40, resume_listener).start()  # Resume listener after 5 seconds
 
 # Save optimal node data
 def save_optimal_node_data(data):
@@ -198,37 +188,42 @@ def calculate_score_for_metric(metric, data):
     score = normalized_value * weights.get(metric, 0.7)
     return score
 
-# Plot metrics locally
+# Plot metrics
 def plot_metrics():
     plt.ion()
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
-    while not stop_event.is_set():
+
+    while plot_running:  # Use the global variable to control the loop
         with metrics_lock:
-            # Plot Latency
+            # Plot Latency Over Time
             ax1.clear()
             if len(latencies) > 0:
                 ax1.plot(range(len(latencies)), list(latencies), label="Latency (ms)", color='blue')
                 ax1.set_title("Latency Over Time")
                 ax1.set_ylabel("Latency (ms)")
-                ax1.legend()
+                ax1.legend(loc="upper right")
                 ax1.grid(True)
 
-            # Plot Throughput
+            # Plot Throughput Over Time
             ax2.clear()
             if len(throughput_data) > 0:
                 ax2.plot(range(len(throughput_data)), list(throughput_data), label="Throughput (msgs/sec)", color='green')
                 ax2.set_title("Throughput Over Time")
                 ax2.set_ylabel("Throughput (msgs/sec)")
-                ax2.legend()
+                ax2.legend(loc="upper right")
                 ax2.grid(True)
 
         plt.pause(1)
+
     plt.ioff()
+    plt.show()
 
-
-# Flask routes and plotting functions remain unchanged
+# Flask app routes remain unchanged
 
 if __name__ == "__main__":
-    threading.Thread(target=dds_listener, daemon=True).start()
-    threading.Thread(target=lambda: app.run(debug=True, use_reloader=False), daemon=True).start()
-    plot_metrics()
+    try:
+        threading.Thread(target=dds_listener, daemon=True).start()
+        threading.Thread(target=lambda: app.run(debug=True, use_reloader=False), daemon=True).start()
+        plot_metrics()
+    except KeyboardInterrupt:
+        plot_running = False
